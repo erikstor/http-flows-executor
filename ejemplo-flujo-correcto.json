@@ -1,0 +1,76 @@
+{
+  "version": "1.0.0",
+  "name": "Flujo HTTP - Ejemplo Correcto",
+  "description": "Ejemplo de flujo con variables correctamente configuradas",
+  "createdAt": "2025-07-01T00:03:44.507Z",
+  "endpoints": [
+    {
+      "id": "407fa37b-6a31-4664-9f6c-70c5b2cb8c4b",
+      "name": "Token",
+      "method": "POST",
+      "url": "https://wally-billetera.dev.wally.tech/auth/v1/token",
+      "headers": "{\n  \"Content-Type\": \"application/json\"\n}",
+      "body": "{\n\"userName\"\n:\n\"MANUEL.RODRIGUEZ@PRAGMA.COM.CO\"\n,\n\"password\"\n:\n\"ContraPass12345+\"\n,\n\"grantType\"\n:\n\"client_credentials\"\n}",
+      "position": {
+        "x": 16.658693343962454,
+        "y": 134.10237713221238
+      },
+      "response": null,
+      "status": "idle"
+    },
+    {
+      "id": "31e6cafd-8c08-469e-bba0-fae088edddf8",
+      "name": "V1",
+      "method": "GET",
+      "url": "https://wally-billetera.dev.wally.tech/walletuser/v1",
+      "headers": "{\n  \"Authorization\": \"Bearer {{ACCESS_TOKEN}}\"\n}",
+      "body": "",
+      "position": {
+        "x": 948.7539052702364,
+        "y": 135.9931362897771
+      },
+      "response": null,
+      "status": "idle"
+    }
+  ],
+  "connections": [
+    {
+      "id": "3bc46c20-79d1-445e-942b-5b6c217e14a9",
+      "source": "407fa37b-6a31-4664-9f6c-70c5b2cb8c4b",
+      "target": "31e6cafd-8c08-469e-bba0-fae088edddf8"
+    }
+  ],
+  "globalVariables": [
+    {
+      "id": "11c5d90a-83f7-4140-a48d-7e504b4a2a2c",
+      "name": "BASE_URL",
+      "value": "https://api.example.com"
+    },
+    {
+      "id": "7aaf7c22-364e-43e6-ad4c-65db498465e1",
+      "name": "API_KEY",
+      "value": "your-api-key-here"
+    }
+  ],
+  "flowVariables": [
+    {
+      "id": "c4e642b0-fd37-4d47-bfea-ae80ee6c72cb",
+      "name": "USER_ID",
+      "value": "12345"
+    }
+  ],
+  "extractors": {
+    "407fa37b-6a31-4664-9f6c-70c5b2cb8c4b": [
+      {
+        "path": "$.access_token",
+        "variableName": "ACCESS_TOKEN",
+        "type": "flow"
+      },
+      {
+        "path": "$.refresh_token",
+        "variableName": "REFRESH_TOKEN",
+        "type": "flow"
+      }
+    ]
+  }
+} 
