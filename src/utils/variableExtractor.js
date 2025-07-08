@@ -1,89 +1,152 @@
 import jsonpath from 'jsonpath';
 
-// Función para extraer variables de una respuesta JSON
+// Función para extraer variables de una respuesta JSON usando JSONPath
 export const extractVariablesFromResponse = (responseData, extractors) => {
   const extractedVariables = {};
   
-  try {
-    // Intentar parsear como JSON
-    const jsonData = typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
-    
-    extractors.forEach(extractor => {
-      try {
-        const { path, variableName, type = 'flow' } = extractor;
-        
-        // Usar JSONPath para extraer el valor
-        const values = jsonpath.query(jsonData, path);
-        
-        if (values.length > 0) {
-          const value = values[0];
-          extractedVariables[variableName] = {
-            value: value,
-            type: type,
-            source: path
-          };
-        }
-      } catch (error) {
-        console.warn(`Error extrayendo variable ${extractor.variableName}:`, error);
-      }
-    });
-    
-  } catch (error) {
-    console.warn('Error parseando respuesta como JSON:', error);
+  if (!responseData || !extractors || extractors.length === 0) {
+    return extractedVariables;
   }
-  
+
+  let jsonData;
+  try {
+    jsonData = typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
+  } catch (error) {
+    console.warn('No se pudo parsear la respuesta como JSON:', error);
+    return extractedVariables;
+  }
+
+  extractors.forEach(extractor => {
+    try {
+      if (!extractor.path || !extractor.variableName) {
+        console.warn('Extractor inválido:', extractor);
+        return;
+      }
+
+      const value = jsonpath.query(jsonData, extractor.path);
+      
+      if (value && value.length > 0) {
+        const extractedValue = String(value[0]);
+        
+        // Validar que el valor no esté vacío
+        if (extractedValue && extractedValue.trim() !== '') {
+          extractedVariables[extractor.variableName] = {
+            value: extractedValue,
+            type: extractor.type || 'flow',
+            path: extractor.path,
+            extractedAt: new Date().toISOString()
+          };
+          
+          console.log(`✅ Variable extraída: ${extractor.variableName} = ${extractedValue.substring(0, 50)}${extractedValue.length > 50 ? '...' : ''}`);
+        } else {
+          console.warn(`⚠️ Valor vacío para ${extractor.variableName} en path ${extractor.path}`);
+        }
+      } else {
+        console.warn(`⚠️ No se encontró valor para ${extractor.variableName} en path ${extractor.path}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error extrayendo variable ${extractor.variableName}:`, error);
+    }
+  });
+
   return extractedVariables;
 };
 
 // Función para aplicar las variables extraídas
-export const applyExtractedVariables = (extractedVariables, setGlobalVariables, setFlowVariables, setEndpointVariables, endpointId) => {
+export const applyExtractedVariables = (
+  extractedVariables,
+  setGlobalVariables,
+  setFlowVariables,
+  setEndpointVariables,
+  endpointId
+) => {
+  const globalUpdates = [];
+  const flowUpdates = [];
+  const endpointUpdates = [];
+
   Object.entries(extractedVariables).forEach(([variableName, variableData]) => {
-    const { value, type } = variableData;
-    
     const newVariable = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: variableName,
-      value: String(value)
+      value: variableData.value,
+      source: 'extracted',
+      extractedAt: variableData.extractedAt,
+      path: variableData.path
     };
-    
-    switch (type) {
+
+    switch (variableData.type) {
       case 'global':
-        setGlobalVariables(prev => {
-          // Actualizar si ya existe, agregar si no
-          const existingIndex = prev.findIndex(v => v.name === variableName);
-          if (existingIndex >= 0) {
-            return prev.map((v, index) => index === existingIndex ? newVariable : v);
-          }
-          return [...prev, newVariable];
-        });
+        globalUpdates.push(newVariable);
         break;
-        
       case 'flow':
-        setFlowVariables(prev => {
-          const existingIndex = prev.findIndex(v => v.name === variableName);
-          if (existingIndex >= 0) {
-            return prev.map((v, index) => index === existingIndex ? newVariable : v);
-          }
-          return [...prev, newVariable];
-        });
+        flowUpdates.push(newVariable);
         break;
-        
       case 'endpoint':
         if (endpointId) {
-          setEndpointVariables(prev => ({
-            ...prev,
-            [endpointId]: [
-              ...(prev[endpointId] || []),
-              newVariable
-            ]
-          }));
+          endpointUpdates.push(newVariable);
         }
         break;
-        
       default:
-        break;
+        flowUpdates.push(newVariable);
     }
   });
+
+  // Aplicar actualizaciones
+  if (globalUpdates.length > 0) {
+    setGlobalVariables(prev => {
+      const updated = [...prev];
+      globalUpdates.forEach(update => {
+        const existingIndex = updated.findIndex(v => v.name === update.name);
+        if (existingIndex >= 0) {
+          updated[existingIndex] = { ...updated[existingIndex], ...update };
+        } else {
+          updated.push(update);
+        }
+      });
+      return updated;
+    });
+  }
+
+  if (flowUpdates.length > 0) {
+    setFlowVariables(prev => {
+      const updated = [...prev];
+      flowUpdates.forEach(update => {
+        const existingIndex = updated.findIndex(v => v.name === update.name);
+        if (existingIndex >= 0) {
+          updated[existingIndex] = { ...updated[existingIndex], ...update };
+        } else {
+          updated.push(update);
+        }
+      });
+      return updated;
+    });
+  }
+
+  if (endpointUpdates.length > 0 && endpointId) {
+    setEndpointVariables(prev => {
+      const currentEndpointVars = prev[endpointId] || [];
+      const updated = [...currentEndpointVars];
+      endpointUpdates.forEach(update => {
+        const existingIndex = updated.findIndex(v => v.name === update.name);
+        if (existingIndex >= 0) {
+          updated[existingIndex] = { ...updated[existingIndex], ...update };
+        } else {
+          updated.push(update);
+        }
+      });
+      return { ...prev, [endpointId]: updated };
+    });
+  }
+
+  // Mostrar resumen
+  const totalExtracted = globalUpdates.length + flowUpdates.length + endpointUpdates.length;
+  if (totalExtracted > 0) {
+    console.log(`🎉 Se extrajeron ${totalExtracted} variables:`, {
+      global: globalUpdates.length,
+      flow: flowUpdates.length,
+      endpoint: endpointUpdates.length
+    });
+  }
 };
 
 // Ejemplos de extractores comunes
@@ -107,6 +170,77 @@ export const commonExtractors = {
     path: '$.session_id',
     variableName: 'SESSION_ID',
     type: 'flow'
+  },
+  // Nuevos extractores comunes
+  token: {
+    path: '$.token',
+    variableName: 'TOKEN',
+    type: 'flow'
+  },
+  bearerToken: {
+    path: '$.bearer_token',
+    variableName: 'BEARER_TOKEN',
+    type: 'flow'
+  },
+  apiKey: {
+    path: '$.api_key',
+    variableName: 'API_KEY',
+    type: 'global'
+  },
+  userEmail: {
+    path: '$.user.email',
+    variableName: 'USER_EMAIL',
+    type: 'flow'
+  },
+  userName: {
+    path: '$.user.name',
+    variableName: 'USER_NAME',
+    type: 'flow'
+  },
+  organizationId: {
+    path: '$.organization.id',
+    variableName: 'ORG_ID',
+    type: 'flow'
+  },
+  projectId: {
+    path: '$.project.id',
+    variableName: 'PROJECT_ID',
+    type: 'flow'
+  },
+  totalCount: {
+    path: '$.total_count',
+    variableName: 'TOTAL_COUNT',
+    type: 'flow'
+  },
+  pageNumber: {
+    path: '$.page',
+    variableName: 'PAGE_NUMBER',
+    type: 'flow'
+  },
+  statusCode: {
+    path: '$.status',
+    variableName: 'STATUS_CODE',
+    type: 'flow'
+  },
+  message: {
+    path: '$.message',
+    variableName: 'MESSAGE',
+    type: 'flow'
+  },
+  errorCode: {
+    path: '$.error.code',
+    variableName: 'ERROR_CODE',
+    type: 'flow'
+  },
+  requestId: {
+    path: '$.request_id',
+    variableName: 'REQUEST_ID',
+    type: 'flow'
+  },
+  correlationId: {
+    path: '$.correlation_id',
+    variableName: 'CORRELATION_ID',
+    type: 'flow'
   }
 };
 
@@ -115,4 +249,9 @@ export const createExtractor = (path, variableName, type = 'flow') => ({
   path,
   variableName,
   type
-}); 
+});
+
+// Función para generar ID único
+const generateId = () => {
+  return Math.random().toString(36).substr(2, 9);
+}; 

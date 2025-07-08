@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
 import { parseCurl, isCurlCommand, generateEndpointName } from '../utils/curlParser';
+import useEscapeKey from '../utils/useEscapeKey';
 
 const CurlImportModal = ({ onImport, onCancel }) => {
   const [curlCommand, setCurlCommand] = useState('');
   const [parsedData, setParsedData] = useState(null);
   const [error, setError] = useState('');
   const [endpointName, setEndpointName] = useState('');
+
+  // Hook para cerrar modal con Escape
+  useEscapeKey(onCancel);
 
   const handleParseCurl = () => {
     try {
@@ -208,27 +212,13 @@ const CurlImportModal = ({ onImport, onCancel }) => {
           borderRadius: '4px',
           fontSize: '0.85rem'
         }}>
-          <h4 style={{ margin: '0 0 0.5rem 0' }}>📋 Ejemplos de comandos cURL:</h4>
-          <div style={{ display: 'grid', gap: '0.5rem' }}>
-            <div>
-              <strong>GET simple:</strong>
-              <code style={{ display: 'block', marginTop: '0.25rem' }}>
-                curl https://api.example.com/users
-              </code>
-            </div>
-            <div>
-              <strong>POST con JSON:</strong>
-              <code style={{ display: 'block', marginTop: '0.25rem' }}>
-                {'curl -X POST https://api.example.com/users -H "Content-Type: application/json" -d \'{"name": "John Doe"}\''}
-              </code>
-            </div>
-            <div>
-              <strong>Con Authorization:</strong>
-              <code style={{ display: 'block', marginTop: '0.25rem' }}>
-                curl -H "Authorization: Bearer token123" https://api.example.com/profile
-              </code>
-            </div>
-          </div>
+          <h4 style={{ margin: '0 0 0.5rem 0' }}>💡 Consejos para importar cURL:</h4>
+          <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+            <li>Copia el comando cURL completo desde tu navegador o herramienta</li>
+            <li>El sistema detectará automáticamente el método, URL, headers y body</li>
+            <li>Puedes editar los valores después de la importación</li>
+            <li>Las variables se pueden agregar usando la sintaxis {'{{NOMBRE_VARIABLE}}'}</li>
+          </ul>
         </div>
 
         <div className="form-actions">

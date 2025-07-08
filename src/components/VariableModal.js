@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
+import useEscapeKey from '../utils/useEscapeKey';
 
 const VariableModal = ({ variable, type, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
     name: '',
     value: ''
   });
+
+  // Hook para cerrar modal con Escape
+  useEscapeKey(onCancel);
 
   // Inicializar formulario con datos de la variable si existe
   useEffect(() => {
@@ -28,7 +33,7 @@ const VariableModal = ({ variable, type, onSave, onCancel }) => {
     
     // Validar que el nombre no esté vacío
     if (!formData.name.trim()) {
-      alert('El nombre de la variable es obligatorio');
+      toast.warning('El nombre de la variable es obligatorio');
       return;
     }
 
@@ -95,22 +100,6 @@ const VariableModal = ({ variable, type, onSave, onCancel }) => {
             <small style={{ color: '#666', fontSize: '0.8rem' }}>
               Puede ser texto, números, URLs, tokens, etc.
             </small>
-          </div>
-
-          {/* Ejemplos de uso */}
-          <div style={{ 
-            marginBottom: '1rem', 
-            padding: '1rem', 
-            backgroundColor: '#e9ecef', 
-            borderRadius: '4px',
-            fontSize: '0.85rem'
-          }}>
-            <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Ejemplos de uso:</h4>
-            <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
-              <li><strong>URL:</strong> <code>https://api.example.com/users/&#123;&#123;USER_ID&#125;&#125;</code></li>
-              <li><strong>Header:</strong> <code>&#123;"Authorization": "Bearer &#123;&#123;API_KEY&#125;&#125;"&#125;</code></li>
-              <li><strong>Body:</strong> <code>&#123;"userId": "&#123;&#123;USER_ID&#125;&#125;"&#125;</code></li>
-            </ul>
           </div>
 
           <div className="form-actions">

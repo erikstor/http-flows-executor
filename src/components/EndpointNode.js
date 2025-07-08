@@ -9,7 +9,10 @@ const EndpointNode = ({
   onRun,
   onConnectionStart,
   onViewResponse,
-  onConfigureExtractors
+  onConfigureExtractors,
+  connections = [],
+  flowVariables = [],
+  extractors = []
 }) => {
   const getMethodColor = (method) => {
     switch (method.toLowerCase()) {
@@ -39,8 +42,29 @@ const EndpointNode = ({
     }
   };
 
+  // Obtener conexiones relacionadas con este endpoint
+  const getEndpointConnections = () => {
+    const outgoing = connections.filter(conn => conn.source === endpoint.id);
+    const incoming = connections.filter(conn => conn.target === endpoint.id);
+    return { outgoing, incoming };
+  };
+
+  // Obtener variables disponibles para este endpoint
+  const getAvailableVariables = () => {
+    const endpointVars = flowVariables.filter(v => v.sourceEndpointId === endpoint.id);
+    const endpointExtractors = Array.isArray(extractors) ? [] : (extractors[endpoint.id] || []);
+    return { variables: endpointVars, extractors: endpointExtractors };
+  };
+
+  const { outgoing, incoming } = getEndpointConnections();
+  const { variables, extractors: endpointExtractors } = getAvailableVariables();
+
   return (
-    <div className={`endpoint-node ${isSelected ? 'selected' : ''}`}>
+    <div className={`endpoint-node ${isSelected ? 'selected' : ''} ${endpoint.status === 'running' ? 'running' : ''} ${endpoint.status === 'error' ? 'error' : ''}`}>
+      {/* Indicador de arrastre */}
+      <div className="drag-handle" title="Arrastra para mover">
+        ⋮⋮
+      </div>
       <div className="endpoint-header">
         <span className={`method-badge ${getMethodColor(endpoint.method)}`}>
           {endpoint.method}
@@ -60,8 +84,12 @@ const EndpointNode = ({
         fontSize: '0.75rem',
         color: getStatusColor(endpoint.status),
         fontWeight: 'bold',
-        marginBottom: '0.5rem'
+        marginBottom: '0.5rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem'
       }}>
+        {endpoint.status === 'running' && <div className="loading-spinner"></div>}
         {getStatusText(endpoint.status)}
       </div>
 
@@ -92,38 +120,76 @@ const EndpointNode = ({
           {endpoint.status === 'running' ? '⏳' : '▶️'}
         </button>
         {endpoint.response && (
-                  <>
-          <button 
-            style={{
-              background: '#17a2b8',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              padding: '0.25rem 0.5rem',
-              cursor: 'pointer',
-              fontSize: '0.75rem'
-            }}
-            onClick={onViewResponse}
-            title="Ver respuesta completa"
-          >
-            👁️
-          </button>
-          <button 
-            style={{
-              background: '#6f42c1',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              padding: '0.25rem 0.5rem',
-              cursor: 'pointer',
-              fontSize: '0.75rem'
-            }}
-            onClick={onConfigureExtractors}
-            title="Configurar extractores de variables"
-          >
-            🔧
-          </button>
-        </>
+          <>
+            <button 
+              style={{
+                background: '#17a2b8',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '0.25rem 0.5rem',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                transition: 'all 0.3s ease'
+              }}
+              onClick={onViewResponse}
+              title="Ver respuesta completa"
+              onMouseEnter={(e) => {
+                e.target.style.transform = 'scale(1.1)';
+                e.target.style.boxShadow = '0 2px 8px rgba(23, 162, 184, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.boxShadow = 'none';
+              }}
+            >
+              👁️
+            </button>
+            <button 
+              style={{
+                background: '#6f42c1',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '0.25rem 0.5rem',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                transition: 'all 0.3s ease',
+                position: 'relative'
+              }}
+              onClick={onConfigureExtractors}
+              title={`Configurar extractores de variables${endpointExtractors.length > 0 ? ` (${endpointExtractors.length} configurado${endpointExtractors.length > 1 ? 's' : ''})` : ''}`}
+              onMouseEnter={(e) => {
+                e.target.style.transform = 'scale(1.1)';
+                e.target.style.boxShadow = '0 2px 8px rgba(111, 66, 193, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.boxShadow = 'none';
+              }}
+            >
+              🔧
+              {endpointExtractors.length > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-8px',
+                  right: '-8px',
+                  background: '#28a745',
+                  color: 'white',
+                  borderRadius: '50%',
+                  width: '16px',
+                  height: '16px',
+                  fontSize: '0.6rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 'bold'
+                }}>
+                  {endpointExtractors.length}
+                </span>
+              )}
+            </button>
+          </>
         )}
         <button 
           className="edit-btn"
@@ -153,6 +219,38 @@ const EndpointNode = ({
           🔗
         </button>
       </div>
+
+      {/* Información de conexiones */}
+      {(outgoing.length > 0 || incoming.length > 0) && (
+        <div className="connection-info">
+          {outgoing.length > 0 && (
+            <div className="connection-badge outgoing" title={`${outgoing.length} conexión(es) saliente(s)`}>
+              ➤ {outgoing.length}
+            </div>
+          )}
+          {incoming.length > 0 && (
+            <div className="connection-badge incoming" title={`${incoming.length} conexión(es) entrante(s)`}>
+              ➤ {incoming.length}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Información de variables disponibles */}
+      {(variables.length > 0 || endpointExtractors.length > 0) && (
+        <div className="variables-info">
+          {variables.length > 0 && (
+            <div className="variable-badge" title={`${variables.length} variable(s) disponible(s)`}>
+              📊 {variables.length}
+            </div>
+          )}
+          {endpointExtractors.length > 0 && (
+            <div className="extractor-badge" title={`${endpointExtractors.length} extractor(es) configurado(s)`}>
+              🔧 {endpointExtractors.length}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Indicador de conexión */}
       {isConnectionSource && (

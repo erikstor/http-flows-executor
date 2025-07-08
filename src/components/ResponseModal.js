@@ -1,6 +1,11 @@
 import React from 'react';
+import { toast } from 'react-toastify';
+import useEscapeKey from '../utils/useEscapeKey';
 
 const ResponseModal = ({ endpoint, onClose }) => {
+  // Hook para cerrar modal con Escape
+  useEscapeKey(onClose);
+
   if (!endpoint || !endpoint.response) {
     return null;
   }
@@ -105,7 +110,7 @@ const ResponseModal = ({ endpoint, onClose }) => {
             className="btn btn-primary" 
             onClick={() => {
               navigator.clipboard.writeText(response.data);
-              alert('Respuesta copiada al portapapeles');
+              toast.success('Respuesta copiada al portapapeles');
             }}
           >
             📋 Copiar Respuesta

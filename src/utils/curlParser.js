@@ -26,7 +26,6 @@ export const parseCurl = (curlCommand) => {
     const regex = /(["'])(?:(?=(\\?))\2.)*?\1|[^\s]+/g;
     const parts = cleanCommand.match(regex) || [];
     let i = 0;
-    let inDataRaw = false;
     let dataRawValue = '';
     
     while (i < parts.length) {
@@ -65,7 +64,6 @@ export const parseCurl = (curlCommand) => {
       // Detectar body (soporte multilínea)
       if (part === '-d' || part === '--data' || part === '--data-raw') {
         if (i + 1 < parts.length) {
-          inDataRaw = true;
           dataRawValue = parts[i + 1];
           i += 2;
           // Si el valor empieza con comilla simple o doble y no termina igual, unir líneas
@@ -83,7 +81,6 @@ export const parseCurl = (curlCommand) => {
           // Quitar comillas externas
           dataRawValue = dataRawValue.replace(/^['"]|['"]$/g, '');
           body = dataRawValue;
-          inDataRaw = false;
           continue;
         }
       }

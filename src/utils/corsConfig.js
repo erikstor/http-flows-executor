@@ -110,12 +110,11 @@ export const corsConfig = {
     }
 
     // Si llegamos aquí, ambos intentos fallaron
-    throw {
-      originalError: lastError,
-      originalUrl,
-      attemptedProxy: this.needsProxy(url),
-      message: `Error CORS: No se pudo completar la petición a ${originalUrl}. ${lastError.message}`
-    };
+    const corsError = new Error(`Error CORS: No se pudo completar la petición a ${originalUrl}. ${lastError.message}`);
+    corsError.originalError = lastError;
+    corsError.originalUrl = originalUrl;
+    corsError.attemptedProxy = this.needsProxy(url);
+    throw corsError;
   },
 
   // Función para verificar si una respuesta es válida (no HTML de la app)

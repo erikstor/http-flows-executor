@@ -1,28 +1,85 @@
 import React, { useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import Sidebar from './components/Sidebar';
 import FlowCanvas from './components/FlowCanvas';
 import EndpointModal from './components/EndpointModal';
 import VariableModal from './components/VariableModal';
-import ResponseModal from './components/ResponseModal';
-import CurlImportModal from './components/CurlImportModal';
+import ConnectionModal from './components/ConnectionModal';
 import ExtractorModal from './components/ExtractorModal';
+import ResponseModal from './components/ResponseModal';
 import CorsInfoModal from './components/CorsInfoModal';
-import RetryNotification from './components/RetryNotification';
+import CurlImportModal from './components/CurlImportModal';
 import RequestDebugger from './components/RequestDebugger';
-import { v4 as uuidv4 } from 'uuid';
+import RetryNotification from './components/RetryNotification';
+import ClearConfirmationModal from './components/ClearConfirmationModal';
+import Notification from './components/Notification';
+import { 
+  saveEndpoints, loadEndpoints, 
+  saveConnections, loadConnections,
+  saveGlobalVariables, loadGlobalVariables,
+  saveFlowVariables, loadFlowVariables,
+  saveEndpointVariables, loadEndpointVariables,
+  loadExtractors, saveLastExecution
+} from './utils/localStorage';
 import { extractVariablesFromResponse, applyExtractedVariables, commonExtractors } from './utils/variableExtractor';
 import { corsConfig } from './utils/corsConfig';
 
 function App() {
+  // Función para limpiar endpoints inválidos
+  const cleanInvalidEndpoints = (endpointsList) => {
+    if (!Array.isArray(endpointsList)) {
+      console.warn('endpointsList no es un array válido:', endpointsList);
+      return [];
+    }
+    
+    return endpointsList.filter(endpoint => 
+      endpoint && 
+      endpoint.id && 
+      typeof endpoint === 'object'
+    ).map(endpoint => {
+      // Asegurar que tenga posición válida
+      let position = endpoint.position;
+      if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
+        position = { x: Math.random() * 400 + 50, y: Math.random() * 300 + 50 };
+        console.warn(`Endpoint ${endpoint.id} no tenía posición válida, asignada nueva posición:`, position);
+      }
+      
+      return {
+        ...endpoint,
+        position,
+        // Asegurar que tenga propiedades básicas
+        name: endpoint.name || 'Endpoint sin nombre',
+        method: endpoint.method || 'GET',
+        url: endpoint.url || 'https://api.example.com',
+        headers: endpoint.headers || '{}',
+        body: endpoint.body || '',
+        response: endpoint.response || null,
+        status: endpoint.status || 'idle'
+      };
+    });
+  };
+
   // Estado global de la aplicación
-  const [endpoints, setEndpoints] = useState([]);
-  const [connections, setConnections] = useState([]);
+  const [endpoints, setEndpoints] = useState(() => {
+    const loadedEndpoints = loadEndpoints();
+    const cleanedEndpoints = cleanInvalidEndpoints(loadedEndpoints);
+    if (cleanedEndpoints.length !== loadedEndpoints.length) {
+      console.warn('Se encontraron endpoints inválidos y se limpiaron');
+      saveEndpoints(cleanedEndpoints);
+    }
+    return cleanedEndpoints;
+  });
+  const [connections, setConnections] = useState(() => loadConnections());
   const [selectedEndpoint, setSelectedEndpoint] = useState(null);
   const [showEndpointModal, setShowEndpointModal] = useState(false);
   const [showVariableModal, setShowVariableModal] = useState(false);
   const [showResponseModal, setShowResponseModal] = useState(false);
   const [showCurlImportModal, setShowCurlImportModal] = useState(false);
   const [showExtractorModal, setShowExtractorModal] = useState(false);
+  const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const [editingConnection, setEditingConnection] = useState(null);
   const [showCorsInfoModal, setShowCorsInfoModal] = useState(false);
   const [corsInfoUrl, setCorsInfoUrl] = useState('');
   const [corsSuggestions, setCorsSuggestions] = useState([]);
@@ -35,18 +92,53 @@ function App() {
   const [editingVariable, setEditingVariable] = useState(null);
   const [viewingResponse, setViewingResponse] = useState(null);
   const [variableType, setVariableType] = useState('global');
-  const [extractors, setExtractors] = useState({});
-  
+  const [extractors, setExtractors] = useState(() => loadExtractors());
+  const [notification, setNotification] = useState({ show: false, type: 'info', message: '' });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showClearConfirmationModal, setShowClearConfirmationModal] = useState(false);
+
   // Variables de diferentes niveles
-  const [globalVariables, setGlobalVariables] = useState([
+  const [globalVariables, setGlobalVariables] = useState(() => loadGlobalVariables().length > 0 ? loadGlobalVariables() : [
     { id: uuidv4(), name: 'BASE_URL', value: 'https://api.example.com' },
     { id: uuidv4(), name: 'API_KEY', value: 'your-api-key-here' }
   ]);
-  const [flowVariables, setFlowVariables] = useState([
+  const [flowVariables, setFlowVariables] = useState(() => loadFlowVariables().length > 0 ? loadFlowVariables() : [
     { id: uuidv4(), name: 'USER_ID', value: '12345' }
   ]);
-  const [endpointVariables, setEndpointVariables] = useState({});
+  const [endpointVariables, setEndpointVariables] = useState(() => loadEndpointVariables());
 
+  // Función para cargar una ejecución del historial
+  const loadExecutionFromHistory = (execution) => {
+    try {
+      if (execution.endpoints) {
+        const cleanedEndpoints = cleanInvalidEndpoints(execution.endpoints);
+        setEndpoints(cleanedEndpoints);
+        saveEndpoints(cleanedEndpoints);
+      }
+      if (execution.connections) {
+        setConnections(execution.connections);
+        saveConnections(execution.connections);
+      }
+      if (execution.globalVariables) {
+        setGlobalVariables(execution.globalVariables);
+        saveGlobalVariables(execution.globalVariables);
+      }
+      if (execution.flowVariables) {
+        setFlowVariables(execution.flowVariables);
+        saveFlowVariables(execution.flowVariables);
+      }
+      if (execution.endpointVariables) {
+        setEndpointVariables(execution.endpointVariables);
+        saveEndpointVariables(execution.endpointVariables);
+      }
+      
+      toast.success('Historial cargado correctamente');
+    } catch (error) {
+      console.error('Error cargando historial:', error);
+      toast.error('Error cargando historial: ' + error.message);
+    }
+  };
+  
   // Función para procesar variables en texto
   const processVariables = (text, endpointId = null) => {
     if (!text) return text;
@@ -100,37 +192,109 @@ function App() {
       status: 'idle'
     };
     
-    setEndpoints(prev => [...prev, newEndpoint]);
+    const updatedEndpoints = [...endpoints, newEndpoint];
+    setEndpoints(updatedEndpoints);
+    saveEndpoints(updatedEndpoints);
     
     // Inicializar variables de endpoint si no existen
     if (!endpointVariables[newEndpoint.id]) {
-      setEndpointVariables(prev => ({
-        ...prev,
+      const updatedEndpointVariables = {
+        ...endpointVariables,
         [newEndpoint.id]: []
-      }));
+      };
+      setEndpointVariables(updatedEndpointVariables);
+      saveEndpointVariables(updatedEndpointVariables);
     }
+
+    setNotification({
+      show: true,
+      type: 'success',
+      message: `Endpoint "${endpointData.name || 'Sin nombre'}" agregado correctamente`
+    });
   };
 
   // Función para actualizar un endpoint
   const updateEndpoint = (id, data) => {
-    setEndpoints(prev => 
-      prev.map(endpoint => 
-        endpoint.id === id ? { ...endpoint, ...data } : endpoint
-      )
-    );
+    const updatedEndpoints = endpoints.map(endpoint => {
+      if (endpoint.id === id) {
+        const updatedEndpoint = { ...endpoint, ...data };
+        // Asegurar que tenga posición válida
+        if (!updatedEndpoint.position || typeof updatedEndpoint.position.x === 'undefined' || typeof updatedEndpoint.position.y === 'undefined') {
+          updatedEndpoint.position = { x: Math.random() * 400 + 50, y: Math.random() * 300 + 50 };
+        }
+        return updatedEndpoint;
+      }
+      return endpoint;
+    });
+    setEndpoints(updatedEndpoints);
+    saveEndpoints(updatedEndpoints);
   };
 
   // Función para eliminar un endpoint
   const deleteEndpoint = (id) => {
-    setEndpoints(prev => prev.filter(endpoint => endpoint.id !== id));
-    setConnections(prev => prev.filter(conn => 
+    const endpointToDelete = endpoints.find(ep => ep.id === id);
+    const updatedEndpoints = endpoints.filter(endpoint => endpoint.id !== id);
+    const updatedConnections = connections.filter(conn => 
       conn.source !== id && conn.target !== id
-    ));
+    );
+    
+    setEndpoints(updatedEndpoints);
+    saveEndpoints(updatedEndpoints);
+    setConnections(updatedConnections);
+    saveConnections(updatedConnections);
     
     // Eliminar variables de endpoint
     const newEndpointVariables = { ...endpointVariables };
     delete newEndpointVariables[id];
     setEndpointVariables(newEndpointVariables);
+    saveEndpointVariables(newEndpointVariables);
+
+    setNotification({
+      show: true,
+      type: 'info',
+      message: `Endpoint "${endpointToDelete?.name || 'Sin nombre'}" eliminado correctamente`
+    });
+  };
+
+  // Función para limpiar todos los endpoints sin afectar las variables
+  const clearAllEndpoints = () => {
+    if (endpoints.length === 0) {
+      setNotification({
+        show: true,
+        type: 'info',
+        message: 'No hay endpoints para limpiar'
+      });
+      return;
+    }
+
+    setShowClearConfirmationModal(true);
+  };
+
+  // Función para confirmar la limpieza
+  const confirmClearAllEndpoints = () => {
+    // Limpiar endpoints y conexiones
+    setEndpoints([]);
+    saveEndpoints([]);
+    setConnections([]);
+    saveConnections([]);
+    
+    // Limpiar variables de endpoint (ya que no hay endpoints)
+    setEndpointVariables({});
+    saveEndpointVariables({});
+    
+    // Limpiar extractores
+    setExtractors({});
+    
+    // Deseleccionar endpoint
+    setSelectedEndpoint(null);
+
+    setNotification({
+      show: true,
+      type: 'success',
+      message: `Se eliminaron ${endpoints.length} endpoint(s) y ${connections.length} conexión(es). Las variables se mantuvieron intactas.`
+    });
+
+    setShowClearConfirmationModal(false);
   };
 
   // Función para agregar una variable
@@ -139,17 +303,23 @@ function App() {
     
     switch (variableType) {
       case 'global':
-        setGlobalVariables(prev => [...prev, newVariable]);
+        const updatedGlobalVariables = [...globalVariables, newVariable];
+        setGlobalVariables(updatedGlobalVariables);
+        saveGlobalVariables(updatedGlobalVariables);
         break;
       case 'flow':
-        setFlowVariables(prev => [...prev, newVariable]);
+        const updatedFlowVariables = [...flowVariables, newVariable];
+        setFlowVariables(updatedFlowVariables);
+        saveFlowVariables(updatedFlowVariables);
         break;
       case 'endpoint':
         if (selectedEndpoint) {
-          setEndpointVariables(prev => ({
-            ...prev,
-            [selectedEndpoint]: [...(prev[selectedEndpoint] || []), newVariable]
-          }));
+          const updatedEndpointVariables = {
+            ...endpointVariables,
+            [selectedEndpoint]: [...(endpointVariables[selectedEndpoint] || []), newVariable]
+          };
+          setEndpointVariables(updatedEndpointVariables);
+          saveEndpointVariables(updatedEndpointVariables);
         }
         break;
       default:
@@ -158,30 +328,40 @@ function App() {
   };
 
   // Función para actualizar una variable
-  const updateVariable = (id, data) => {
-    switch (variableType) {
+  const updateVariable = (id, data, type = null) => {
+    const variableTypeToUse = type || variableType;
+    
+    switch (variableTypeToUse) {
       case 'global':
-        setGlobalVariables(prev => 
-          prev.map(variable => 
+        setGlobalVariables(prev => {
+          const updated = prev.map(variable => 
             variable.id === id ? { ...variable, ...data } : variable
-          )
-        );
+          );
+          saveGlobalVariables(updated);
+          return updated;
+        });
         break;
       case 'flow':
-        setFlowVariables(prev => 
-          prev.map(variable => 
+        setFlowVariables(prev => {
+          const updated = prev.map(variable => 
             variable.id === id ? { ...variable, ...data } : variable
-          )
-        );
+          );
+          saveFlowVariables(updated);
+          return updated;
+        });
         break;
       case 'endpoint':
         if (selectedEndpoint) {
-          setEndpointVariables(prev => ({
-            ...prev,
-            [selectedEndpoint]: prev[selectedEndpoint].map(variable =>
-              variable.id === id ? { ...variable, ...data } : variable
-            )
-          }));
+          setEndpointVariables(prev => {
+            const updated = {
+              ...prev,
+              [selectedEndpoint]: prev[selectedEndpoint].map(variable =>
+                variable.id === id ? { ...variable, ...data } : variable
+              )
+            };
+            saveEndpointVariables(updated);
+            return updated;
+          });
         }
         break;
       default:
@@ -190,20 +370,34 @@ function App() {
   };
 
   // Función para eliminar una variable
-  const deleteVariable = (id) => {
-    switch (variableType) {
+  const deleteVariable = (id, type = null) => {
+    const variableTypeToUse = type || variableType;
+    
+    switch (variableTypeToUse) {
       case 'global':
-        setGlobalVariables(prev => prev.filter(variable => variable.id !== id));
+        setGlobalVariables(prev => {
+          const updated = prev.filter(variable => variable.id !== id);
+          saveGlobalVariables(updated);
+          return updated;
+        });
         break;
       case 'flow':
-        setFlowVariables(prev => prev.filter(variable => variable.id !== id));
+        setFlowVariables(prev => {
+          const updated = prev.filter(variable => variable.id !== id);
+          saveFlowVariables(updated);
+          return updated;
+        });
         break;
       case 'endpoint':
         if (selectedEndpoint) {
-          setEndpointVariables(prev => ({
-            ...prev,
-            [selectedEndpoint]: prev[selectedEndpoint].filter(variable => variable.id !== id)
-          }));
+          setEndpointVariables(prev => {
+            const updated = {
+              ...prev,
+              [selectedEndpoint]: prev[selectedEndpoint].filter(variable => variable.id !== id)
+            };
+            saveEndpointVariables(updated);
+            return updated;
+          });
         }
         break;
       default:
@@ -212,18 +406,37 @@ function App() {
   };
 
   // Función para agregar una conexión
-  const addConnection = (sourceId, targetId) => {
+  const addConnection = (sourceId, targetId, config = null) => {
     const newConnection = {
       id: uuidv4(),
       source: sourceId,
-      target: targetId
+      target: targetId,
+      config: config || {
+        name: `Conexión ${sourceId.slice(0, 8)} → ${targetId.slice(0, 8)}`,
+        description: '',
+        dataMapping: [],
+        conditions: [],
+        extractors: []
+      }
     };
-    setConnections(prev => [...prev, newConnection]);
+    const updatedConnections = [...connections, newConnection];
+    setConnections(updatedConnections);
+    saveConnections(updatedConnections);
+    
+    if (config) {
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `Conexión "${config.name}" configurada correctamente`
+      });
+    }
   };
 
   // Función para eliminar una conexión
   const deleteConnection = (id) => {
-    setConnections(prev => prev.filter(conn => conn.id !== id));
+    const updatedConnections = connections.filter(conn => conn.id !== id);
+    setConnections(updatedConnections);
+    saveConnections(updatedConnections);
   };
 
   // Función para agregar un extractor a un endpoint
@@ -267,6 +480,12 @@ function App() {
     }
   };
 
+  // Función para manejar configuración de extractores de conexión
+  const handleConfigureConnectionExtractors = (connection) => {
+    setEditingConnection(connection);
+    setShowConnectionModal(true);
+  };
+
   // Función para exportar el flujo completo
   const exportFlow = () => {
     const flowData = {
@@ -298,7 +517,7 @@ function App() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    alert('Flujo exportado correctamente');
+    toast.success('Flujo exportado correctamente');
   };
 
   // Función para importar un flujo
@@ -347,11 +566,11 @@ function App() {
           setExtractors(flowData.extractors);
         }
         
-        alert('Flujo importado correctamente');
+        toast.success('Flujo importado correctamente');
         
       } catch (error) {
         console.error('Error importando flujo:', error);
-        alert(`Error importando flujo: ${error.message}`);
+        toast.error(`Error importando flujo: ${error.message}`);
       }
     };
     
@@ -542,10 +761,12 @@ function App() {
   // Función para ejecutar todo el flujo
   const runFlow = async () => {
     if (endpoints.length === 0) {
-      alert('No hay endpoints para ejecutar');
+      toast.warning('No hay endpoints para ejecutar');
       return;
     }
 
+    const startTime = Date.now();
+    
     // Ejecutar endpoints en orden de conexiones
     const executionOrder = getExecutionOrder();
     
@@ -556,6 +777,8 @@ function App() {
     
     let executedCount = 0;
     let failedEndpoint = null;
+    let successfulEndpoints = 0;
+    let failedEndpoints = 0;
     
     for (let i = 0; i < executionOrder.length; i++) {
       const endpointId = executionOrder[i];
@@ -593,12 +816,14 @@ function App() {
         // Verificar si el endpoint falló
         if (updatedEndpoint?.status === 'error') {
           failedEndpoint = endpoint;
+          failedEndpoints++;
           console.error(`❌ Endpoint falló: ${endpoint.name || endpointId}`);
           console.error(`   Estado: ${updatedEndpoint?.status}`);
           console.error(`   Respuesta:`, updatedEndpoint?.response);
           break; // Detener en el primer fallo
         }
         
+        successfulEndpoints++;
         console.log(`✅ Endpoint completado exitosamente: ${endpoint.name || endpointId}`);
         console.log(`   Status HTTP: ${updatedEndpoint?.response?.status}`);
         
@@ -620,14 +845,55 @@ function App() {
       }
     }
     
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    
+    // Guardar información de la ejecución
+    const executionInfo = {
+      status: failedEndpoint ? 'error' : 'success',
+      totalEndpoints: executionOrder.length,
+      successfulEndpoints,
+      failedEndpoints,
+      duration,
+      endpoints: endpoints.map(ep => ({
+        id: ep.id,
+        name: ep.name,
+        method: ep.method,
+        status: ep.status,
+        response: ep.response ? {
+          status: ep.response.status,
+          statusText: ep.response.statusText
+        } : null
+      })),
+      connections,
+      globalVariables,
+      flowVariables,
+      endpointVariables,
+      timestamp: new Date().toISOString()
+    };
+    
+    saveLastExecution(executionInfo);
+    
     console.log('\n=== RESUMEN DE EJECUCIÓN ===');
+    console.log(`⏱️ Duración total: ${duration}ms`);
+    console.log(`📊 Endpoints exitosos: ${successfulEndpoints}`);
+    console.log(`❌ Endpoints fallidos: ${failedEndpoints}`);
+    
     if (failedEndpoint) {
       console.error('❌ Flujo detenido por fallo en:', failedEndpoint.name || failedEndpoint.id);
-      alert(`Flujo detenido: Fallo en endpoint "${failedEndpoint.name || failedEndpoint.id}"`);
+      setNotification({
+        show: true,
+        type: 'error',
+        message: `Flujo detenido: Fallo en endpoint "${failedEndpoint.name || failedEndpoint.id}"`
+      });
     } else {
       console.log('✅ Flujo completado exitosamente');
       console.log(`📊 Endpoints procesados: ${executedCount}/${executionOrder.length}`);
-      alert(`Flujo ejecutado correctamente: ${executedCount} endpoints procesados`);
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `Flujo ejecutado correctamente: ${executedCount} endpoints procesados`
+      });
     }
   };
 
@@ -650,7 +916,7 @@ function App() {
           console.log(`✅ URL actualizada a: ${suggestion.newUrl}`);
           
           // Mostrar notificación de éxito
-          alert(`✅ URL actualizada automáticamente a: ${suggestion.newUrl}`);
+          toast.success(`✅ URL actualizada automáticamente a: ${suggestion.newUrl}`);
           break;
 
         case 'configure_server':
@@ -664,9 +930,9 @@ function App() {
           
           try {
             await navigator.clipboard.writeText(headersText);
-            alert('📋 Headers copiados al portapapeles. Configúralos en tu servidor y luego reintenta.');
+            toast.info('📋 Headers copiados al portapapeles. Configúralos en tu servidor y luego reintenta.');
           } catch (e) {
-            alert('⚠️ Copia manualmente los headers mostrados y configúralos en tu servidor.');
+                          toast.warning('⚠️ Copia manualmente los headers mostrados y configúralos en tu servidor.');
           }
           break;
 
@@ -678,16 +944,16 @@ function App() {
           });
           console.log(`✅ URL actualizada para usar proxy externo: ${proxyUrl}`);
           
-          alert(`✅ URL actualizada para usar proxy externo: ${proxyUrl}`);
+          toast.success(`✅ URL actualizada para usar proxy externo: ${proxyUrl}`);
           break;
 
         default:
           console.warn('Tipo de solución no reconocido:', suggestion.action);
-          alert('❌ Tipo de solución no reconocido');
+          toast.error('❌ Tipo de solución no reconocido');
       }
     } catch (error) {
       console.error('Error aplicando solución CORS:', error);
-      alert('❌ Error aplicando la solución. Inténtalo manualmente.');
+              toast.error('❌ Error aplicando la solución. Inténtalo manualmente.');
     }
   };
 
@@ -719,13 +985,13 @@ function App() {
       // Mostrar resultado
       const updatedEndpoint = endpoints.find(ep => ep.id === lastFailedEndpoint);
       if (updatedEndpoint?.status === 'completed') {
-        alert(`✅ Petición exitosa después de aplicar la solución CORS!`);
+        toast.success(`✅ Petición exitosa después de aplicar la solución CORS!`);
       } else {
-        alert(`❌ La petición aún falla. Revisa la configuración.`);
+                  toast.error(`❌ La petición aún falla. Revisa la configuración.`);
       }
     } catch (error) {
       console.error('Error en reintento:', error);
-      alert(`❌ Error durante el reintento: ${error.message}`);
+              toast.error(`❌ Error durante el reintento: ${error.message}`);
     } finally {
       // Ocultar notificación
       setShowRetryNotification(false);
@@ -739,23 +1005,41 @@ function App() {
   // Función para obtener el orden de ejecución basado en conexiones
   const getExecutionOrder = () => {
     console.log('🔍 Calculando orden de ejecución...');
-    console.log('Endpoints disponibles:', endpoints.map(ep => `${ep.name} (${ep.id})`));
-    console.log('Conexiones:', connections.map(conn => `${conn.source} → ${conn.target}`));
+    
+    // Verificar que endpoints y connections sean arrays válidos
+    const validEndpoints = endpoints || [];
+    const validConnections = connections || [];
+    
+    console.log('Endpoints disponibles:', validEndpoints.map(ep => `${ep.name} (${ep.id})`));
+    console.log('Conexiones:', validConnections.map(conn => `${conn.source} → ${conn.target}`));
     
     // Crear un grafo de dependencias
     const graph = {};
     const inDegree = {};
     
     // Inicializar
-    endpoints.forEach(endpoint => {
-      graph[endpoint.id] = [];
-      inDegree[endpoint.id] = 0;
+    validEndpoints.forEach(endpoint => {
+      if (endpoint && endpoint.id) {
+        graph[endpoint.id] = [];
+        inDegree[endpoint.id] = 0;
+      }
     });
     
     // Construir el grafo
-    connections.forEach(connection => {
-      graph[connection.source].push(connection.target);
-      inDegree[connection.target]++;
+    validConnections.forEach(connection => {
+      // Verificar que la conexión tenga source y target válidos
+      if (!connection || !connection.source || !connection.target) {
+        console.warn('Conexión sin source o target válidos ignorada:', connection);
+        return;
+      }
+      
+      // Verificar que tanto el source como el target existan en el grafo
+      if (graph[connection.source] && graph[connection.target] !== undefined) {
+        graph[connection.source].push(connection.target);
+        inDegree[connection.target]++;
+      } else {
+        console.warn('Conexión inválida ignorada:', connection);
+      }
     });
     
     console.log('Grafo de dependencias:', graph);
@@ -779,12 +1063,16 @@ function App() {
       order.push(current);
       
       // Reducir el grado de entrada de los nodos dependientes
-      graph[current].forEach(dependent => {
-        inDegree[dependent]--;
-        if (inDegree[dependent] === 0) {
-          queue.push(dependent);
-        }
-      });
+      if (graph[current]) {
+        graph[current].forEach(dependent => {
+          if (inDegree[dependent] !== undefined) {
+            inDegree[dependent]--;
+            if (inDegree[dependent] === 0) {
+              queue.push(dependent);
+            }
+          }
+        });
+      }
     }
     
     // Si hay nodos restantes, agregarlos al final
@@ -804,7 +1092,7 @@ function App() {
         <h1>Flows HTTP - Constructor de Flujos de API</h1>
       </header>
       
-      <main className="main-content">
+      <main className={`main-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <Sidebar
           globalVariables={globalVariables}
           flowVariables={flowVariables}
@@ -838,6 +1126,9 @@ function App() {
             setCorsInfoUrl('https://wally-billetera.dev.wally.tech/walletuser/v1');
             setShowCorsInfoModal(true);
           }}
+          onLoadExecution={loadExecutionFromHistory}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
         
         <FlowCanvas
@@ -854,6 +1145,7 @@ function App() {
             setShowEndpointModal(true);
           }}
           onDeleteEndpoint={deleteEndpoint}
+          onClearAllEndpoints={clearAllEndpoints}
           onRunEndpoint={runEndpoint}
           onRunFlow={runFlow}
           onAddConnection={addConnection}
@@ -865,9 +1157,15 @@ function App() {
             setViewingResponse(endpoint);
             setShowResponseModal(true);
           }}
-          onConfigureExtractors={(endpoint) => {
-            setSelectedEndpoint(endpoint.id);
-            setShowExtractorModal(true);
+          onConfigureExtractors={(item) => {
+            // Si es una conexión (tiene source y target)
+            if (item.source && item.target) {
+              handleConfigureConnectionExtractors(item);
+            } else {
+              // Si es un endpoint
+              setSelectedEndpoint(item.id);
+              setShowExtractorModal(true);
+            }
           }}
           onExportFlow={exportFlow}
           onImportFlow={handleFileSelect}
@@ -954,6 +1252,33 @@ function App() {
         />
       )}
 
+      {showConnectionModal && editingConnection && (
+        <ConnectionModal
+          isOpen={showConnectionModal}
+          onClose={() => {
+            setShowConnectionModal(false);
+            setEditingConnection(null);
+          }}
+          sourceEndpoint={endpoints.find(ep => ep.id === editingConnection.source)}
+          targetEndpoint={endpoints.find(ep => ep.id === editingConnection.target)}
+          onSaveConnection={(connectionData) => {
+            // Actualizar la conexión existente con la nueva configuración
+            const updatedConnections = connections.map(conn => 
+              conn.id === editingConnection.id 
+                ? { ...conn, config: connectionData.config }
+                : conn
+            );
+            setConnections(updatedConnections);
+            saveConnections(updatedConnections);
+            setShowConnectionModal(false);
+            setEditingConnection(null);
+          }}
+          flowVariables={flowVariables}
+          extractors={extractors}
+          connections={connections}
+        />
+      )}
+
       {showCorsInfoModal && (
         <CorsInfoModal
           isOpen={showCorsInfoModal}
@@ -987,6 +1312,35 @@ function App() {
           setShowRequestDebugger(false);
           setRequestDebugInfo({});
         }}
+      />
+
+      <Notification
+        type={notification.type}
+        message={notification.message}
+        isVisible={notification.show}
+        onClose={() => setNotification({ show: false, type: 'info', message: '' })}
+        duration={5000}
+      />
+
+      <ClearConfirmationModal
+        isOpen={showClearConfirmationModal}
+        onConfirm={confirmClearAllEndpoints}
+        onCancel={() => setShowClearConfirmationModal(false)}
+        endpointsCount={endpoints.length}
+        connectionsCount={connections.length}
+      />
+
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
       />
     </div>
   );

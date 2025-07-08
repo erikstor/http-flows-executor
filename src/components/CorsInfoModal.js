@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
+import { toast } from 'react-toastify';
+import useEscapeKey from '../utils/useEscapeKey';
 
 const CorsInfoModal = ({ isOpen, onClose, url, suggestions = [], onApplySolution, onRetry }) => {
   const [activeTab, setActiveTab] = useState('auto');
   const [appliedSolution, setAppliedSolution] = useState(null);
+
+  // Hook para cerrar modal con Escape
+  useEscapeKey(onClose);
 
   if (!isOpen) return null;
 
@@ -65,7 +70,7 @@ const CorsInfoModal = ({ isOpen, onClose, url, suggestions = [], onApplySolution
     }
     
     // Mostrar mensaje de éxito
-    alert(`Solución aplicada: ${suggestion.title}`);
+    toast.success(`Solución aplicada: ${suggestion.title}`);
   };
 
   const handleRetry = async () => {
